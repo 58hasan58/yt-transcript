@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>YouTube → ChatGPT Zusammenfassung</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f4f6fa; color: #1a1a1a;
+      font-size: 18px; line-height: 1.5;
+    }
+    .container { max-width: 640px; margin: 0 auto; padding: 32px 20px 64px; }
+    h1 { font-size: 28px; margin: 0 0 8px; color: #2a2a2a; }
+    .subtitle { color: #666; margin: 0 0 32px; }
+
+    .field { margin-bottom: 20px; }
+    label { display: block; font-weight: 600; margin-bottom: 8px; color: #2a2a2a; }
+    input[type="text"], select {
+      width: 100%; padding: 14px 16px; font-size: 18px;
+      border: 2px solid #d0d5dd; border-radius: 10px;
+      background: #fff; color: #1a1a1a;
+      -webkit-appearance: none; appearance: none;
+    }
+    input[type="text"]:focus, select:focus { outline: none; border-color: #4f46e5; }
+
+    button {
+      width: 100%; padding: 16px; font-size: 19px; font-weight: 600;
+      color: #fff; background: #4f46e5;
+      border: none; border-radius: 10px; cursor: pointer; margin-top: 8px;
+    }
+    button:hover:not(:disabled) { background: #4338ca; }
+    button:disabled { background: #9ca3af; cursor: not-allowed; }
+
+    .status {
+      margin-top: 20px; padding: 14px 16px; border-radius: 10px;
+      font-size: 17px; display: none;
+    }
+    .status.info    { display: block; background: #eef2ff; color: #3730a3; }
+    .status.error   { display: block; background: #fee2e2; color: #991b1b; }
+    .status.success { display: block; background: #dcfce7; color: #166534; }
+
+    .hint { font-size: 15px; color: #666; margin-top: 6px; }
+
+    .spinner {
+      display: inline-block; width: 16px; height: 16px;
+      border: 2px solid #fff; border-top-color: transparent;
+      border-radius: 50%; animation: spin 0.8s linear infinite;
+      vertical-align: middle; margin-right: 8px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>📺 YouTube zusammenfassen</h1>
+    <p class="subtitle">Link einfügen, Optionen wählen – ChatGPT macht den Rest.</p>
+
+    <div class="field">
+      <label for="url">YouTube-Link</label>
+      <input type="text" id="url"
+        placeholder="https://www.youtube.com/watch?v=..." autocomplete="off" />
+      <div class="hint">Den ganzen Link aus der Adresszeile kopieren.</div>
+    </div>
+
+    <div class="field">
+      <label for="language">Sprache der Zusammenfassung</label>
+      <select id="language">
+        <option value="Deutsch" selected>Deutsch</option>
+        <option value="Englisch">Englisch</option>
+        <option value="Französisch">Französisch</option>
+        <option value="Spanisch">Spanisch</option>
+        <option value="Italienisch">Italienisch</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label for="format">Format</label>
+      <select id="format">
+        <option value="bullets" selected>Stichpunkte</option>
+        <option value="summary">Zusammenfassung</option>
+        <option value="prose">Fließtext</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label for="length">Länge</label>
+      <select id="length">
+        <option value="short">Kurz</option>
+        <option value="medium" selected>Mittel</option>
+        <option value="long">Ausführlich</option>
+      </select>
+    </div>
+
+    <button id="go">Zusammenfassung erstellen</button>
+    <div id="status" class="status"></div>
+  </div>
+
+  <script>
+    // ====================================================================
+    // KONFIGURATION
+    // ====================================================================
+    // ⚠️ Hier deine Vercel-URL einsetzen.
+    const BACKEND_URL = "https://DEIN-PROJEKT.vercel.app";
+
+    const $ = (id) => document.getElementById(id);
+    const statusEl = $("status");
+
+    function showStatus(message, type = "info") {
+      statusEl.className = "status " + type;
+      statusEl.innerHTML = message;
+    }
+
+    function formatDescription(format, language) {
+      const map = {
+        bullets: `als übersichtliche Stichpunkte (Bullet Points) auf ${language}`,
+        summary: `als kompakte Zusammenfassung auf ${language}`,
+        prose:   `als zusammenhängenden Fließtext auf ${language}`,
+      };
+      return map[format] || map.summary;
+    }
+
+    function lengthDescription(length) {
+      const map = {
+        short:  "Halte es kurz (ca. 5-8 Sätze bzw. 5 Stichpunkte).",
+        medium: "Mittlere Länge (ca. 1-2 Absätze bzw. 8-12 Stichpunkte).",
+        long:   "Ausführlich mit allen wichtigen Details.",
+      };
+      return map[length] || map.medium;
+    }
+
+    function buildPrompt({ language, format, length, transcript }) {
+      const formatPart = formatDescription(format, language);
+      const lengthPart = lengthDescription(length);
+      return (
+        `Bitte fasse das folgende YouTube-Transkript ${formatPart} zusammen. ` +
+        `${lengthPart} ` +
+        `Konzentriere dich auf die wichtigsten Aussagen und Erkenntnisse. ` +
+        `Ignoriere Werbung, Intros und Verabschiedungen.\n\n` +
+        `--- Transkript ---\n${transcript}`
+      );
+    }
+
+    function openChatGPT(tab, prompt) {
+      const url = "https://chatgpt.com/?q=" + encodeURIComponent(prompt);
+      if (tab && !tab.closed) tab.location.href = url;
+      else window.location.href = url;
+    }
+
+    // Bei AI-Transkription kann das länger dauern. Wir aktualisieren
+    // alle paar Sekunden den Status, damit's nicht aussieht als hänge die App.
+    function startProgressMessages() {
+      const messages = [
+        "Hole das Transkript... das dauert ein paar Sekunden.",
+        "Wenn das Video keine Untertitel hat, wird es jetzt automatisch transkribiert.",
+        "Bei längeren Videos kann das bis zu einer Minute dauern, bitte warten...",
+        "Fast geschafft, Video wird noch verarbeitet...",
+      ];
+      let i = 0;
+      showStatus(messages[i], "info");
+      return setInterval(() => {
+        i = Math.min(i + 1, messages.length - 1);
+        showStatus(messages[i], "info");
+      }, 8000);
+    }
+
+    $("go").addEventListener("click", async () => {
+      const url      = $("url").value.trim();
+      const language = $("language").value;
+      const format   = $("format").value;
+      const length   = $("length").value;
+
+      if (!url) {
+        showStatus("Bitte zuerst einen YouTube-Link einfügen.", "error");
+        return;
+      }
+
+      // Tab JETZT öffnen (User-Geste). Sonst blockiert der Browser
+      // window.open() nach dem await.
+      const newTab = window.open("about:blank", "_blank");
+
+      const button = $("go");
+      const originalLabel = button.textContent;
+      button.disabled = true;
+      button.innerHTML = '<span class="spinner"></span>Transkript wird geladen...';
+
+      const progressTimer = startProgressMessages();
+
+      try {
+        const apiUrl = `${BACKEND_URL}/api/transcript?url=${encodeURIComponent(url)}`;
+        const response = await fetch(apiUrl);
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          const msg = data.error || "Unbekannter Fehler beim Abrufen des Transkripts.";
+          showStatus("❌ " + msg, "error");
+          if (newTab && !newTab.closed) newTab.close();
+          return;
+        }
+
+        const transcript = (data.transcript || "").trim();
+        if (!transcript) {
+          showStatus("❌ Das Transkript ist leer. Bitte ein anderes Video probieren.", "error");
+          if (newTab && !newTab.closed) newTab.close();
+          return;
+        }
+
+        const prompt = buildPrompt({ language, format, length, transcript });
+        showStatus("✅ Fertig! ChatGPT wird im neuen Tab geöffnet...", "success");
+        openChatGPT(newTab, prompt);
+
+      } catch (err) {
+        console.error(err);
+        showStatus(
+          "❌ Verbindung zum Server fehlgeschlagen. " +
+          "Bitte Internet prüfen und nochmal versuchen.",
+          "error"
+        );
+        if (newTab && !newTab.closed) newTab.close();
+      } finally {
+        clearInterval(progressTimer);
+        button.disabled = false;
+        button.textContent = originalLabel;
+      }
+    });
+
+    $("url").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") $("go").click();
+    });
+  </script>
+</body>
+</html>
