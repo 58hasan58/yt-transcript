@@ -1,3 +1,15 @@
+"""
+Vercel Serverless Function (Flask): Holt YouTube-Transkripte über Supadata.
+
+Routen:
+  GET /api/transcript?url=<youtube-url>
+  → JSON { "transcript": "...", "lang": "..." }
+    oder { "error": "..." } mit passendem Status-Code.
+
+Umgebungsvariablen (in Vercel setzen):
+  SUPADATA_API_KEY  – API-Key von https://dash.supadata.ai
+"""
+
 import os
 import time
 import requests
@@ -78,11 +90,17 @@ def transcript_endpoint():
 
     try:
         # Supadata-Aufruf:
-        #   text=true   → fertiger Plain-Text statt Segment-Array
-        #   mode=auto   → vorhandene Untertitel nehmen, sonst per AI erzeugen
+        #   text=true       → fertiger Plain-Text statt Segment-Array
+        #   mode=auto       → vorhandene Untertitel nehmen, sonst per AI erzeugen
+        #   KEIN lang-Param → liefert Originalsprache des Videos
+        # Wir senden zusätzlich Accept-Language: * mit, damit Supadata nicht
+        # versehentlich die Sprache des aufrufenden Browsers bevorzugt.
+        headers = _supadata_headers()
+        headers["Accept-Language"] = "*"
+
         r = requests.get(
             f"{SUPADATA_BASE}/transcript",
-            headers=_supadata_headers(),
+            headers=headers,
             params={"url": url, "text": "true", "mode": "auto"},
             timeout=30,
         )
@@ -154,6 +172,7 @@ def transcript_endpoint():
     return jsonify({
         "transcript": content,
         "lang": data.get("lang"),
+        "availableLangs": data.get("availableLangs", []),
     }), 200
 
 
