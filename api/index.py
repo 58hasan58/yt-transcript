@@ -1,15 +1,3 @@
-"""
-Vercel Serverless Function (Flask): Holt YouTube-Transkripte über Supadata.
-
-Routen:
-  GET /api/transcript?url=<youtube-url>
-  → JSON { "transcript": "...", "lang": "..." }
-    oder { "error": "..." } mit passendem Status-Code.
-
-Umgebungsvariablen (in Vercel setzen):
-  SUPADATA_API_KEY  – API-Key von https://dash.supadata.ai
-"""
-
 import os
 import time
 import requests
